@@ -7,8 +7,8 @@ import (
 	"log"
 	"net"
 
-	"github.com/mdlayher/arp"
 	"github.com/mdlayher/ethernet"
+	"github.com/xytis/arp"
 )
 
 var (

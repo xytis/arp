@@ -9,7 +9,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/mdlayher/arp"
+	"github.com/xytis/arp"
 )
 
 var (
