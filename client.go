@@ -1,6 +1,7 @@
 package arp
 
 import (
+	"bytes"
 	"errors"
 	"net"
 	"time"
@@ -105,6 +106,36 @@ func (c *Client) Resolve(ip net.IP) (net.HardwareAddr, error) {
 		}
 
 		return arp.SenderHardwareAddr, nil
+	}
+}
+
+func (c *Client) RequestReverse(mac net.HardwareAddr) error {
+	// (sender mac, undefined, target mac, undefined)
+	arp, err := NewPacket(OperationRequestReverse, c.ifi.HardwareAddr, c.ip, mac, c.ip)
+	if err != nil {
+		return err
+	}
+	return c.WriteTo(arp, ethernet.Broadcast)
+}
+
+func (c *Client) ResolveReverse(mac net.HardwareAddr) (net.IP, error) {
+	err := c.RequestReverse(mac)
+	if err != nil {
+		return nil, err
+	}
+
+	// Loop and wait for replies
+	for {
+		arp, _, err := c.Read()
+		if err != nil {
+			return nil, err
+		}
+
+		if arp.Operation != OperationReplyReverse || bytes.Compare(arp.SenderHardwareAddr, mac) != 0 {
+			continue
+		}
+
+		return arp.SenderIP, nil
 	}
 }
 
