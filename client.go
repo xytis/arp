@@ -1,7 +1,6 @@
 package arp
 
 import (
-	"bytes"
 	"errors"
 	"net"
 	"time"
@@ -20,7 +19,6 @@ var (
 // ARP packets.
 type Client struct {
 	ifi *net.Interface
-	ip  net.IP
 	p   net.PacketConn
 }
 
@@ -48,14 +46,8 @@ func NewClient(ifi *net.Interface) (*Client, error) {
 // to allow an arbitrary net.PacketConn to be used in a Client, so testing
 // is easier to accomplish.
 func newClient(ifi *net.Interface, p net.PacketConn, addrs []net.Addr) (*Client, error) {
-	ip, err := firstIPv4Addr(addrs)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Client{
 		ifi: ifi,
-		ip:  ip,
 		p:   p,
 	}, nil
 }
@@ -66,77 +58,13 @@ func (c *Client) Close() error {
 	return c.p.Close()
 }
 
-// Request sends an ARP request, asking for the hardware address
-// associated with an IPv4 address. The response, if any, can be read
-// with the Read method.
-//
-// Unlike Resolve, which provides an easier interface for getting the
-// hardware address, Request allows sending many requests in a row,
-// retrieving the responses afterwards.
-func (c *Client) Request(ip net.IP) error {
-	// Create ARP packet for broadcast address to attempt to find the
-	// hardware address of the input IP address
-	arp, err := NewPacket(OperationRequest, c.ifi.HardwareAddr, c.ip, ethernet.Broadcast, ip)
+func (c *Client) BroadcastChange(ip net.IP, mac net.HardwareAddr) error {
+	// (sender mac, sender ip, target mac, target ip)
+	arp, err := NewPacket(OperationRequest, mac, ip, ethernet.Broadcast, ip)
 	if err != nil {
 		return err
 	}
 	return c.WriteTo(arp, ethernet.Broadcast)
-}
-
-// Resolve performs an ARP request, attempting to retrieve the
-// hardware address of a machine using its IPv4 address. Resolve must not
-// be used concurrently with Read. If you're using Read (usually in a
-// loop), you need to use Request instead. Resolve may read more than
-// one message if it receives messages unrelated to the request.
-func (c *Client) Resolve(ip net.IP) (net.HardwareAddr, error) {
-	err := c.Request(ip)
-	if err != nil {
-		return nil, err
-	}
-
-	// Loop and wait for replies
-	for {
-		arp, _, err := c.Read()
-		if err != nil {
-			return nil, err
-		}
-
-		if arp.Operation != OperationReply || !arp.SenderIP.Equal(ip) {
-			continue
-		}
-
-		return arp.SenderHardwareAddr, nil
-	}
-}
-
-func (c *Client) RequestReverse(mac net.HardwareAddr) error {
-	// (sender mac, undefined, target mac, undefined)
-	arp, err := NewPacket(OperationRequestReverse, c.ifi.HardwareAddr, c.ip, mac, c.ip)
-	if err != nil {
-		return err
-	}
-	return c.WriteTo(arp, ethernet.Broadcast)
-}
-
-func (c *Client) ResolveReverse(mac net.HardwareAddr) (net.IP, error) {
-	err := c.RequestReverse(mac)
-	if err != nil {
-		return nil, err
-	}
-
-	// Loop and wait for replies
-	for {
-		arp, _, err := c.Read()
-		if err != nil {
-			return nil, err
-		}
-
-		if arp.Operation != OperationReplyReverse || bytes.Compare(arp.SenderHardwareAddr, mac) != 0 {
-			continue
-		}
-
-		return arp.SenderIP, nil
-	}
 }
 
 // Read reads a single ARP packet and returns it, together with its
